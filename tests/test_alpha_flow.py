@@ -161,7 +161,7 @@ def test_clicking_selected_answer_can_return_to_skipped_state_via_api_null():
             json={"session_question_id": q["id"], "value": "yes", "comment": None},
         )
         client.put(
-            "/api/sponses",
+            "/api/responses",
             headers=auth(creator_token),
             json={"session_question_id": q["id"], "value": None, "comment": None},
         )
