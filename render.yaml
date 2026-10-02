@@ -1,23 +1,23 @@
 services:
   - type: web
-    name: uself-test
+    name: uself-alpha
     runtime: docker
     plan: free
     region: frankfurt
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health
-    autoDeployTrigger: commit
+    autoDeployTrigger: checksPass
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: uself-test-db
+          name: uself-alpha-db
           property: connectionString
-      - key: CORS_ORIGINS
-        value: http://localhost:5173
+      - key: APP_ENV
+        value: production
 
 databases:
-  - name: uself-test-db
+  - name: uself-alpha-db
     plan: free
     region: frankfurt
     postgresMajorVersion: "18"
