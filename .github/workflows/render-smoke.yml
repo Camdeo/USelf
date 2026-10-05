@@ -1,0 +1,94 @@
+name: Render smoke test
+
+on:
+  push:
+    branches: [render-smoke]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Exercise live Alpha end to end
+        shell: python
+        run: |
+          import json
+          import urllib.request
+          import urllib.error
+          from urllib.parse import urlparse, parse_qs
+
+          BASE = "https://uself-alpha.onrender.com"
+
+          def req(path, method="GET", body=None, token=None):
+              data = None if body is None else json.dumps(body).encode()
+              headers = {"Content-Type": "application/json"}
+              if token:
+                  headers["X-Participant-Token"] = token
+              r = urllib.request.Request(BASE + path, data=data, headers=headers, method=method)
+              with urllib.request.urlopen(r, timeout=60) as resp:
+                  return resp.status, json.loads(resp.read().decode())
+
+          def token_from(url):
+              return parse_qs(urlparse(url).query)["token"][0]
+
+          status, health = req("/health")
+          assert status == 200 and health["ok"] is True
+          assert health["questions"] == 312, health
+
+          status, themes = req("/api/themes")
+          assert status == 200 and len(themes["themes"]) == 7
+          slug = themes["themes"][1]["slug"]
+
+          status, room = req("/api/sessions", "POST", {
+              "creator_alias": "Smoke Creator",
+              "creator_age": 30,
+              "theme_slugs": [slug]
+          })
+          assert status == 200 and room["question_count"] > 0
+          creator = token_from(room["creator_url"])
+          partner = token_from(room["partner_url"])
+
+          status, me = req("/api/me", token=partner)
+          assert status == 200 and me["profile_complete"] is False
+
+          status, _ = req("/api/profile", "PUT", {"alias": "Smoke Partner", "age": 28}, partner)
+          assert status == 200
+
+          status, cq = req("/api/questions", token=creator)
+          status, pq = req("/api/questions", token=partner)
+          assert len(cq["questions"]) == len(pq["questions"]) == room["question_count"]
+          qid = cq["questions"][0]["id"]
+
+          status, _ = req("/api/responses", "PUT", {
+              "session_question_id": qid,
+              "value": "yes",
+              "comment": "creator smoke"
+          }, creator)
+          assert status == 200
+
+          status, _ = req("/api/responses", "PUT", {
+              "session_question_id": qid,
+              "value": "maybe",
+              "comment": "partner smoke"
+          }, partner)
+          assert status == 200
+
+          status, waiting = req("/api/results", token=creator)
+          assert status == 200 and waiting["ready"] is False
+
+          req("/api/submit", "POST", {"confirm": True}, creator)
+          req("/api/submit", "POST", {"confirm": True}, partner)
+
+          status, result = req("/api/results", token=creator)
+          assert status == 200 and result["ready"] is True
+          first = next(item for item in result["items"] if item["id"] == qid)
+          assert first["status"] == "blue", first
+          assert first["creator"]["comment"] == "creator smoke"
+          assert first["partner"]["comment"] == "partner smoke"
+
+          print("LIVE SMOKE OK", {
+              "questions": health["questions"],
+              "themes": len(themes["themes"]),
+              "room_questions": room["question_count"],
+              "result_status": first["status"],
+          })
